@@ -5,7 +5,7 @@ from app.extensions import db
 from app.models import (Character, Zombie, Combat, ChatMessage, Party,
                         PartyInvite, CharacterQuest, LootPoint, Decoration,
                         CharacterAchievement, Achievement, Auction, Duel,
-                        Obstacle, LoreNote, Contract)
+                        Obstacle, LoreNote, Contract, ZombieType, Item, Location)
 from app.services import tick, combat_engine
 from app.services.progression import get_stats
 from app.services.quest_service import is_complete
@@ -23,6 +23,22 @@ def get_state():
     combat_engine.check_zombie_aggro(current_user)
     db.session.commit()
     return jsonify(_build_state(current_user))
+
+
+def _target_info(req_type, target):
+    try:
+        if req_type == "kill":
+            zt = ZombieType.query.get(int(target))
+            return {"name": zt.name if zt else "?", "icon": zt.icon if zt else "🧟"}
+        if req_type == "collect":
+            it = Item.query.get(int(target))
+            return {"name": it.name if it else "?", "icon": it.icon if it else "📦"}
+        if req_type == "visit":
+            loc = Location.query.get(int(target))
+            return {"name": loc.name if loc else "?", "icon": "🚩"}
+    except (ValueError, TypeError):
+        pass
+    return {"name": "?", "icon": "❓"}
 
 
 def _build_state(character):
@@ -56,10 +72,27 @@ def _build_state(character):
         return [{"name": m.character.name if m.character else "?", "message": m.message,
                  "created_at": m.created_at.isoformat()} for m in reversed(rows)]
 
-    active_quests = CharacterQuest.query.filter_by(character_id=character.id, status="active").all()
+    active_quests_rows = CharacterQuest.query.filter_by(character_id=character.id, status="active").all()
+    active_quests_data = []
+    for cq in active_quests_rows:
+        q = cq.quest
+        if not q: continue
+        info = _target_info(q.req_type, q.req_target)
+        active_quests_data.append({
+            "cq_id": cq.id,
+            "name": q.name,
+            "description": q.description,
+            "req_type": q.req_type,
+            "target_name": info["name"],
+            "target_icon": info["icon"],
+            "progress": cq.progress,
+            "required": q.req_count,
+            "complete": cq.progress >= q.req_count
+        })
+
     quests_summary = {
-        "active_count": len(active_quests),
-        "ready_count": sum(1 for cq in active_quests if is_complete(cq)),
+        "active_count": len(active_quests_data),
+        "ready_count": sum(1 for q in active_quests_data if q["complete"]),
     }
 
     unlocked_ach = CharacterAchievement.query.filter_by(character_id=character.id).all()
@@ -110,9 +143,11 @@ def _build_state(character):
             "obstacles": [{"id": o.id, "x": o.x, "y": o.y, "kind": o.kind, "variant": o.variant or "", "hp": o.hp or 0,
                            "max_hp": o.max_hp or 0} for o in obstacles],
             "lore_notes": [{"id": n.id, "x": n.x, "y": n.y, "title": n.title, "text": n.text} for n in lore_notes],
-            "contracts": [{"id": c.id, "title": c.title, "desc": c.description, "req_type": c.req_type,
-                           "req_target": c.req_target, "req_count": c.req_count, "gold": c.reward_gold,
-                           "xp": c.reward_xp} for c in contracts],
+            # Добавлен npc_id для контрактов
+            "contracts": [
+                {"id": c.id, "npc_id": c.npc_id, "title": c.title, "desc": c.description, "req_type": c.req_type,
+                 "req_target": c.req_target, "req_count": c.req_count, "gold": c.reward_gold, "xp": c.reward_xp} for c
+                in contracts],
             "players": [{"id": p.id, "name": p.name, "level": p.level, "x": p.x, "y": p.y} for p in players_here],
             "zombies": [{"id": z.id, "name": z.type.name, "icon": z.type.icon, "level": z.type.level, "hp": z.hp,
                          "max_hp": z.max_hp, "x": z.x, "y": z.y} for z in zombies],
@@ -122,6 +157,7 @@ def _build_state(character):
         "party": None,
         "party_invites": [],
         "quests_summary": quests_summary,
+        "active_quests": active_quests_data,
         "achievements": achievements_summary,
         "events": get_active_events(),
         "auction_active_count": Auction.query.filter_by(seller_id=character.id, status="active").count(),

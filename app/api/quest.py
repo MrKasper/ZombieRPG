@@ -1,4 +1,4 @@
-from flask import Blueprint, jsonify
+from flask import Blueprint, jsonify, request
 from flask_login import current_user, login_required
 from app.extensions import db
 from app.models import (Quest, CharacterQuest, NPC, Item, Location)
@@ -28,6 +28,9 @@ def _target_name(req_type, target):
 @quest_bp.get("/quests")
 @login_required
 def list_quests():
+    # Получаем ID NPC, если он передан
+    npc_id_req = request.args.get("npc_id", type=int)
+
     active_rows = (CharacterQuest.query
                    .filter_by(character_id=current_user.id, status="active").all())
     active = []
@@ -52,12 +55,15 @@ def list_quests():
     ).all()
     npc_ids = [n.id for n in npcs_here]
 
+    # Если пришел конкретный NPC — фильтруем только по нему
+    target_npc_ids = [npc_id_req] if npc_id_req else npc_ids
+
     all_cq = CharacterQuest.query.filter_by(character_id=current_user.id).all()
     taken_ids = {cq.quest_id for cq in all_cq}
     turned_in_ids = {cq.quest_id for cq in all_cq if cq.status == "turned_in"}
 
     available = []
-    for q in Quest.query.filter(Quest.npc_id.in_(npc_ids)).all():
+    for q in Quest.query.filter(Quest.npc_id.in_(target_npc_ids)).all():
         if q.id in taken_ids:
             continue
         if q.requires_quest_id and q.requires_quest_id not in turned_in_ids:
@@ -97,7 +103,6 @@ def accept(quest_id):
     if not npc or npc.location_id != current_user.location_id:
         return jsonify({"error": "npc_not_here"}), 400
 
-    # авто-прогресс для collect: считаем уже имеющееся
     initial = 0
     if q.req_type == "collect":
         try:
@@ -137,6 +142,11 @@ def turnin(cq_id):
 
     grant_rewards(current_user, cq.quest)
     cq.status = "turned_in"
+
+    if npc and npc.faction and npc.faction != "neutral":
+        rep = dict(current_user.reputation_json or {})
+        rep[npc.faction] = rep.get(npc.faction, 0) + 10
+        current_user.reputation_json = rep
 
     current_user.quests_done = (current_user.quests_done or 0) + 1
     from app.services.achievements import check_achievements

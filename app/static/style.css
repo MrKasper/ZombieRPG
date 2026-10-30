@@ -454,3 +454,26 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
 @keyframes slide-in {
   from { transform: translateY(30px); opacity: 0; }
 }
+/* Новые стили для выживания */
+.survival-bars {
+  display: flex; gap: 12px; margin-top: 12px;
+  padding-top: 10px; border-top: 1px solid var(--border);
+  font-size: 12px;
+}
+.survival-bar { display: flex; align-items: center; gap: 6px; flex: 1; }
+.survival-bar .bar { flex: 1; height: 6px; background: #0a0d10; border-radius: 3px; border: 1px solid var(--border); overflow: hidden; }
+.survival-bar .bar > div { height: 100%; transition: width 0.3s; }
+.bar-food > div { background: #d6a23d; box-shadow: 0 0 8px rgba(214, 162, 61, 0.5); }
+.bar-water > div { background: #4d8ce0; box-shadow: 0 0 8px rgba(77, 140, 224, 0.5); }
+
+#quest-tracker-panel { max-height: 150px; overflow-y: auto; }
+
+.lot-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; background: var(--panel-2);
+  border-radius: 8px; margin-bottom: 6px; font-size: 13px;
+  border: 1px solid transparent; transition: border-color 0.15s;
+}
+.lot-item:hover { border-color: var(--border); }
+.lot-item .lot-name { flex: 1; }
+.lot-item .lot-price { color: var(--gold); font-weight: 700; }
